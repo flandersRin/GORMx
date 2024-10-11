@@ -13,7 +13,7 @@ GORMx is a comprehensive wrapper for GORM that provides generic repository patte
 
 #### Installation:
 ```bash
-go get github.com/<your-username>/gormx
+go get github.com/flandersRin/gormx
 ```
 
 #### Usage:
