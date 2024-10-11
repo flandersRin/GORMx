@@ -2,20 +2,13 @@ package gormx
 
 import (
 	"context"
-	"fmt"
 	"time"
 
 	"github.com/go-kratos/kratos/v2/registry"
 
-	"e.coding.net/healthmate/fftp_golang/fftp_infrastructure/conf"
-	"e.coding.net/healthmate/fftp_golang/fftp_infrastructure/nacos"
-	"e.coding.net/healthmate/fftp_golang/fftp_infrastructure/util"
-
 	"github.com/go-kratos/kratos/v2/log"
 	"github.com/go-redsync/redsync/v4"
-	"github.com/go-redsync/redsync/v4/redis/goredis/v9"
 	"github.com/redis/go-redis/v9"
-	"gorm.io/driver/mysql"
 	"gorm.io/gorm"
 )
 
@@ -71,81 +64,6 @@ func (d *Data) InTx(ctx context.Context, fn func(ctx context.Context) error) err
 // NewTransaction .
 func NewTransaction(d *Data) Transaction {
 	return d
-}
-
-func InitMysql(c *conf.Ops, systemLogger log.Logger, zapLogger *util.ZapLogger) *gorm.DB {
-	h := log.NewHelper(systemLogger)
-
-	dsn := fmt.Sprintf("%s:%s@tcp(%s:%d)/%s?charset=utf8mb4&parseTime=True&loc=Local",
-		c.Mysql.Username,
-		c.Mysql.Password,
-		c.Mysql.Host,
-		c.Mysql.Port,
-		c.Mysql.DB,
-	)
-
-	gConfig := &gorm.Config{
-		Logger: zapLogger,
-	}
-	db, err := gorm.Open(mysql.Open(dsn), gConfig)
-	if err != nil {
-		h.Errorf("init mysql error: %v", err)
-		return nil
-	}
-
-	sqlDB, err := db.DB()
-	if err != nil {
-		h.Errorf("init mysql error: %v", err)
-		return nil
-	}
-	sqlDB.SetMaxIdleConns(100)
-	sqlDB.SetMaxOpenConns(150)
-	sqlDB.SetConnMaxLifetime(time.Second * 25)
-	if sqlDB, err := db.DB(); err != nil {
-		h.Info("closing gorm mysql connection")
-		defer sqlDB.Close()
-	}
-
-	return db
-}
-
-// NewData .
-func NewData(c *conf.Ops, systemLogger log.Logger, zapLogger *util.ZapLogger) (*Data, func(), error) {
-	h := log.NewHelper(systemLogger)
-
-	dataBaseConnections := InitMysql(c, systemLogger, zapLogger)
-
-	addr := fmt.Sprintf("%s:%d", c.Redis.Host, c.Redis.Port)
-	rdb := redis.NewClient(&redis.Options{
-		Addr:         addr,
-		Password:     c.Redis.Password,
-		DB:           c.Redis.DB,
-		MinIdleConns: 100,
-		PoolSize:     150,
-	})
-
-	_, err := rdb.Ping(context.Background()).Result()
-	if err != nil {
-		// 连接失败，返回错误
-		return nil, nil, err
-	}
-
-	// todo set nacos nameSpace
-	rg, err := nacos.NewRegistry(nacos.WithRegisterNamespace(util.GetEnv("", "")))
-	if err != nil {
-		return nil, nil, err
-	}
-
-	pool := goredis.NewPool(rdb)
-	rs := redsync.New(pool)
-	d := &Data{db: dataBaseConnections, rdb: rdb, rs: rs, h: h, dis: rg}
-
-	cleanup := func() {
-		h.Info("closing redis connection")
-		d.rdb.Close()
-		h.Info("closing the data resources")
-	}
-	return d, cleanup, nil
 }
 
 func (d *Data) WithRegistry(dis registry.Discovery) {

@@ -6,7 +6,6 @@ import (
 	"reflect"
 	"strings"
 
-	"e.coding.net/healthmate/fftp_golang/fftp_infrastructure/util"
 	"github.com/pkg/errors"
 	"gorm.io/gorm"
 	"gorm.io/gorm/schema"
@@ -41,7 +40,7 @@ func (b *BaseRepo[T]) parsePrimaryKey() string {
 }
 
 func recursiveParsePrimaryKey(reflectValue reflect.Value) string {
-	reflectType := util.IndirectType(reflectValue.Type())
+	reflectType := IndirectType(reflectValue.Type())
 	var hasId bool
 	for i := 0; i < reflectType.NumField(); i++ {
 		if fieldStruct := reflectType.Field(i); ast.IsExported(fieldStruct.Name) {
@@ -164,7 +163,7 @@ func (b *BaseRepo[T]) deleteAutoTime(updateData map[string]any) {
 }
 
 func (b *BaseRepo[T]) recursiveDeleteAutoTime(v reflect.Value, updateData map[string]any) {
-	t := util.IndirectType(v.Type())
+	t := IndirectType(v.Type())
 	for i := 0; i < t.NumField(); i++ {
 		field := t.Field(i)
 		if field.Anonymous {
@@ -241,7 +240,7 @@ func (b *BaseRepo[T]) SelectByMap(ctx context.Context, condition map[string]any)
 func camel2SnakeForMapKey(condition map[string]any) map[string]any {
 	c := make(map[string]any)
 	for k, v := range condition {
-		c[util.Camel2Snake(k)] = v
+		c[Camel2Snake(k)] = v
 	}
 	return c
 }
@@ -315,4 +314,25 @@ func (b *BaseRepo[T]) PageSelect(ctx context.Context, page *PageParam, query any
 		total = int64(len(res))
 	}
 	return res, int32(total), nil
+}
+
+func Camel2Snake(s string) string {
+	data := make([]byte, 0, len(s)*2)
+	j := false
+	num := len(s)
+	for i := 0; i < num; i++ {
+		d := s[i]
+		// or通过ASCII码进行大小写的转化
+		// 65-90（A-Z），97-122（a-z）
+		// 判断如果字母为大写的A-Z就在前面拼接一个_
+		if i > 0 && d >= 'A' && d <= 'Z' && j {
+			data = append(data, '_')
+		}
+		if d != '_' {
+			j = true
+		}
+		data = append(data, d)
+	}
+	// ToLower把大写字母统一转小写
+	return strings.ToLower(string(data[:]))
 }
