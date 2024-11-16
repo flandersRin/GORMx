@@ -4,11 +4,6 @@ import (
 	"context"
 	"time"
 
-	"github.com/go-kratos/kratos/v2/registry"
-
-	"github.com/go-kratos/kratos/v2/log"
-	"github.com/go-redsync/redsync/v4"
-	"github.com/redis/go-redis/v9"
 	"gorm.io/gorm"
 )
 
@@ -31,11 +26,7 @@ type Transaction interface {
 
 // Data .
 type Data struct {
-	db  *gorm.DB
-	h   *log.Helper
-	rdb *redis.Client
-	rs  *redsync.Redsync
-	dis registry.Discovery
+	db *gorm.DB
 }
 
 type contextTxKey struct{}
@@ -49,27 +40,10 @@ func (d *Data) DB(ctx context.Context) *gorm.DB {
 	return d.db.WithContext(ctx)
 }
 
-func (d *Data) RDB() *redis.Client {
-	return d.rdb
-}
-
 // InTx fn是包含了事务操作的方法，只要fn里面有异常，里面的db操作都会回滚
 func (d *Data) InTx(ctx context.Context, fn func(ctx context.Context) error) error {
 	return d.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		ctx = context.WithValue(ctx, contextTxKey{}, tx)
 		return fn(ctx)
 	})
-}
-
-// NewTransaction .
-func NewTransaction(d *Data) Transaction {
-	return d
-}
-
-func (d *Data) WithRegistry(dis registry.Discovery) {
-	d.dis = dis
-}
-
-func (d *Data) GetRegistry() registry.Discovery {
-	return d.dis
 }
