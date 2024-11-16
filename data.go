@@ -3,8 +3,6 @@ package gormx
 import (
 	"context"
 	"time"
-
-	"gorm.io/gorm"
 )
 
 type DataBaseSoftDelete int8
@@ -24,26 +22,4 @@ type Transaction interface {
 	InTx(context.Context, func(ctx context.Context) error) error
 }
 
-// Data .
-type Data struct {
-	db *gorm.DB
-}
-
 type contextTxKey struct{}
-
-// DB 和事务相关的db操作，在取db连接时均采用此方法
-func (d *Data) DB(ctx context.Context) *gorm.DB {
-	tx, ok := ctx.Value(contextTxKey{}).(*gorm.DB)
-	if ok {
-		return tx
-	}
-	return d.db.WithContext(ctx)
-}
-
-// InTx fn是包含了事务操作的方法，只要fn里面有异常，里面的db操作都会回滚
-func (d *Data) InTx(ctx context.Context, fn func(ctx context.Context) error) error {
-	return d.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		ctx = context.WithValue(ctx, contextTxKey{}, tx)
-		return fn(ctx)
-	})
-}

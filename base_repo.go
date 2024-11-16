@@ -13,25 +13,38 @@ import (
 )
 
 type BaseRepo[T any] struct {
-	data *Data
+	GormDB *gorm.DB
 	// 泛型参数代表的struct名称，例如：BaseRepo[Pop]
 	StructName string
 	PrimaryKey string
 }
 
-func (b *BaseRepo[T]) GetData() *Data {
-	return b.data
-}
-
 // NewBaseRepo 这个函数的意义在于不暴露db进行初始化，外部只能通过函数DB()获取
-func NewBaseRepo[T any](data *Data) BaseRepo[T] {
+func NewBaseRepo[T any](db *gorm.DB) BaseRepo[T] {
 	b := BaseRepo[T]{
-		data: data,
+		GormDB: db,
 	}
 	var m T
 	b.StructName = reflect.ValueOf(m).Type().Name()
 	b.PrimaryKey = b.parsePrimaryKey()
 	return b
+}
+
+// WithTransactionCtx 和事务相关的db操作，在取db连接时均采用此方法
+func (b *BaseRepo[T]) withTransactionCtx(ctx context.Context) *gorm.DB {
+	tx, ok := ctx.Value(contextTxKey{}).(*gorm.DB)
+	if ok {
+		return tx
+	}
+	return b.GormDB.WithContext(ctx)
+}
+
+// InTx fn是包含了事务操作的方法，只要fn里面有异常，里面的db操作都会回滚
+func (b *BaseRepo[T]) InTx(ctx context.Context, fn func(ctx context.Context) error) error {
+	return b.GormDB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		ctx = context.WithValue(ctx, contextTxKey{}, tx)
+		return fn(ctx)
+	})
 }
 
 func (b *BaseRepo[T]) parsePrimaryKey() string {
@@ -76,7 +89,7 @@ func recursiveParsePrimaryKey(reflectValue reflect.Value) string {
 
 // Insert 插入单条记录
 func (b *BaseRepo[T]) Insert(ctx context.Context, m *T) (err error) {
-	if err = b.data.DB(ctx).Create(m).Error; err != nil {
+	if err = b.withTransactionCtx(ctx).Create(m).Error; err != nil {
 		err = errors.Wrapf(err, "db: insert %s error, param: %+v", b.StructName, m)
 	}
 	return
@@ -85,7 +98,7 @@ func (b *BaseRepo[T]) Insert(ctx context.Context, m *T) (err error) {
 // BatchInsert 批量插入
 // 注：需要根据插入数据的大小来设置batchSize
 func (b *BaseRepo[T]) BatchInsert(ctx context.Context, m []*T, batchSize int) (int64, error) {
-	tx := b.data.DB(ctx).CreateInBatches(m, batchSize)
+	tx := b.withTransactionCtx(ctx).CreateInBatches(m, batchSize)
 	if tx.Error != nil {
 		return 0, errors.Wrapf(tx.Error, "db: batch insert %s error, param: %+v", b.StructName, m)
 	}
@@ -95,7 +108,7 @@ func (b *BaseRepo[T]) BatchInsert(ctx context.Context, m []*T, batchSize int) (i
 // DeleteByPK 根据主键删除，支持单个主键或者一个主键数组
 func (b *BaseRepo[T]) DeleteByPK(ctx context.Context, pks any) (int64, error) {
 	var m T
-	tx := b.data.DB(ctx).Where(map[string]any{
+	tx := b.withTransactionCtx(ctx).Where(map[string]any{
 		b.PrimaryKey: pks,
 	}).Delete(&m)
 	if err := tx.Error; err != nil {
@@ -110,7 +123,7 @@ func (b *BaseRepo[T]) DeleteByPK(ctx context.Context, pks any) (int64, error) {
 func (b *BaseRepo[T]) DeleteByMap(ctx context.Context, condition map[string]any) (int64, error) {
 	c := camel2SnakeForMapKey(condition)
 	var m T
-	tx := b.data.DB(ctx).Where(c).Delete(&m)
+	tx := b.withTransactionCtx(ctx).Where(c).Delete(&m)
 	if err := tx.Error; err != nil {
 		return 0, errors.Wrapf(err, "db: delete %s by map error, condition: %v", b.StructName, condition)
 	}
@@ -119,7 +132,7 @@ func (b *BaseRepo[T]) DeleteByMap(ctx context.Context, condition map[string]any)
 
 // UpdateByPK 根据主键更新非空字段
 func (b *BaseRepo[T]) UpdateByPK(ctx context.Context, t *T) (int64, error) {
-	tx := b.data.DB(ctx).Model(t).Updates(t)
+	tx := b.withTransactionCtx(ctx).Model(t).Updates(t)
 	if err := tx.Error; err != nil {
 		return 0, errors.Wrapf(err, "db: update %s by pk error, param: %+v", b.StructName, t)
 	}
@@ -150,7 +163,7 @@ func (b *BaseRepo[T]) UpdateByMap(ctx context.Context, condition map[string]any,
 	b.deleteAutoTime(updateData)
 
 	var m T
-	tx := b.data.DB(ctx).Model(&m).Where(c).Updates(updateData)
+	tx := b.withTransactionCtx(ctx).Model(&m).Where(c).Updates(updateData)
 	if err := tx.Error; err != nil {
 		return 0, errors.Wrapf(err, "db: update %s by map error, condition: %v, updateData: %v", b.StructName, c, updateData)
 	}
@@ -250,7 +263,7 @@ func (b *BaseRepo[T]) _select(ctx context.Context, condition any) ([]*T, error) 
 		m   T
 		res []*T
 	)
-	if err := b.data.DB(ctx).Model(&m).Where("deleted !=?", Deleted).Where(condition).Find(&res).Error; err != nil {
+	if err := b.withTransactionCtx(ctx).Model(&m).Where("deleted !=?", Deleted).Where(condition).Find(&res).Error; err != nil {
 		return nil, errors.Wrapf(err, "db: select %s error, condition: %+v", b.StructName, condition)
 	}
 	return res, nil
@@ -296,11 +309,11 @@ func (b *BaseRepo[T]) PageSelect(ctx context.Context, page *PageParam, query any
 		res   []*T
 	)
 	if page != nil {
-		if err := b.data.DB(ctx).Model(&m).Where("deleted !=?", Deleted).Where(query, args...).Count(&total).Error; err != nil {
+		if err := b.withTransactionCtx(ctx).Model(&m).Where("deleted !=?", Deleted).Where(query, args...).Count(&total).Error; err != nil {
 			return nil, 0, errors.Wrapf(err, "db: select count %s error, query: %+v, args: %+v", b.StructName, query, args)
 		}
 	}
-	q := b.data.DB(ctx).Model(&m).Where("deleted !=?", Deleted).Where(query, args...)
+	q := b.withTransactionCtx(ctx).Model(&m).Where("deleted !=?", Deleted).Where(query, args...)
 	if page != nil {
 		q = q.Offset(int(page.PageNo-1) * int(page.PageSize)).Limit(int(page.PageSize))
 		if page.OrderBy != "" {
