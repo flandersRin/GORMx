@@ -1,6 +1,6 @@
 **GORMx - A Generic ORM Extension for GORM**
 
-[中文文档]()
+[中文文档](https://github.com/flandersRin/Gormx/blob/master/doc/README.md)
 
 GORMx is a comprehensive wrapper for GORM that provides generic repository pattern implementations and additional utility functions. It helps to simplify common database operations like CRUD, batch processing, and pagination, reducing boilerplate code. This repository is designed to boost productivity for developers who frequently use GORM in their Go projects.
 
@@ -13,7 +13,7 @@ GORMx is a comprehensive wrapper for GORM that provides generic repository patte
 
 #### Installation:
 ```bash
-go get github.com/<your-username>/gormx
+go get github.com/flandersRin/gormx
 ```
 
 #### Usage:

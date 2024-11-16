@@ -14,7 +14,7 @@ GORM 开发 Go 项目的开发者的生产力。
 #### 安装:
 
 ```bash
-go get github.com/<your-username>/gormx
+go get github.com/flandersRin/gormx
 ```
 
 #### 使用示例:
